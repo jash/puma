@@ -1,4 +1,4 @@
-#! /bin/sh
+#! /bin/bash
 ### BEGIN INIT INFO
 # Provides:          puma 
 # Required-Start:    $remote_fs $syslog
@@ -26,6 +26,9 @@ RUNPUMA=/usr/local/bin/run-puma
 
 # Load the VERBOSE setting and other rcS variables
 . /lib/init/vars.sh
+
+# Load RVM if it is present
+[ -f /etc/profile.d/rvm.sh ] && source /etc/profile.d/rvm.sh
 
 # Define LSB log_* functions.
 # Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
@@ -105,12 +108,17 @@ do_stop_one() {
       log_daemon_msg "---> Puma $1 isn't running."
     else
       log_daemon_msg "---> About to kill PID `cat $PIDFILE`"
-      pumactl --state $STATEFILE stop
+      if [ "$USER" = "root" ]; then
+        user=`ls -l $PIDFILE | awk '{print $3}'`
+        su - $user -c "cd $dir && bundle exec pumactl --state $STATEFILE stop"
+      else
+        cd $dir && bundle exec pumactl --state $STATEFILE stop
+      fi
       # Many daemons don't delete their pidfiles when they exit.
       rm -f $PIDFILE $STATEFILE
     fi
   else
-    log_daemon_msg "---> No puma here..."
+    log_daemon_msg "---> No puma PID found here... $PIDFILE"
   fi
   return 0
 }
@@ -130,12 +138,18 @@ do_restart() {
 #
 do_restart_one() {
   PIDFILE=$1/tmp/puma/pid
+  STATEFILE=$1/tmp/puma/state
   i=`grep $1 $CONFIG`
   dir=`echo $i | cut -d , -f 1`
   
   if [ -e $PIDFILE ]; then
     log_daemon_msg "--> About to restart puma $1"
-    pumactl --state $dir/tmp/puma/state restart
+    if [ "$USER" = "root" ]; then
+      user=`ls -l $PIDFILE | awk '{print $3}'`
+      su - $user -c "cd $dir && bundle exec pumactl --state $STATEFILE restart"
+    else
+      cd $dir && bundle exec pumactl --state $STATEFILE restart
+    fi
     # kill -s USR2 `cat $PIDFILE`
     # TODO Check if process exist
   else
@@ -170,16 +184,22 @@ do_status() {
 #
 do_status_one() {
   PIDFILE=$1/tmp/puma/pid
+  STATEFILE=$1/tmp/puma/state
   i=`grep $1 $CONFIG`
   dir=`echo $i | cut -d , -f 1`
   
   if [ -e $PIDFILE ]; then
     log_daemon_msg "--> About to status puma $1"
-    pumactl --state $dir/tmp/puma/state stats
+    if [ "$USER" = "root" ]; then
+      user=`ls -l $PIDFILE | awk '{print $3}'`
+      su - $user -c "cd $dir && bundle exec pumactl --state $STATEFILE stats"
+    else
+      cd $dir && bundle exec pumactl --state $STATEFILE stats
+    fi
     # kill -s USR2 `cat $PIDFILE`
     # TODO Check if process exist
   else
-    log_daemon_msg "--> $1 isn't there :(..." 
+    log_daemon_msg "---> No puma PID found here... $PIDFILE"
   fi
 	return 0
 }
@@ -344,4 +364,4 @@ case "$1" in
     exit 3
   ;;
 esac
-:
+
